@@ -1,0 +1,96 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include <iomanip>
+#include <Eigen/Dense>
+
+using namespace std;
+using namespace Eigen;
+
+struct Joint {
+    int id;
+    double x, y;
+};
+
+struct Member {
+    int id, i, j;
+    double A, E, I, w, joint_case;
+};
+
+const int scale = 1000;
+vector<int> ResDof = {1, 2, 3, 70, 71, 72, 73, 74, 75, 142, 143, 144};
+
+vector<Joint> readJointCoordinates(const string &filename);
+vector<Member> readMemberConnectivity(const string &filename);
+
+int main() {
+    vector<Joint> joints = readJointCoordinates("G_20_STRCUTURE_INFO.xlsx");
+    vector<Member> members = readMemberConnectivity("G_20_STRCUTURE_INFO.xlsx");
+
+    int numJoints = joints.size();
+    int numMembers = members.size();
+
+    MatrixXd k_unrestr(3 * numJoints, 3 * numJoints);
+    k_unrestr.setZero();
+    VectorXd end_force_unrestr(3 * numJoints);
+    end_force_unrestr.setZero();
+
+    for (const auto &member : members) {
+        int i = member.i - 1;
+        int j = member.j - 1;
+
+        double len = sqrt(pow(joints[j].x - joints[i].x, 2) + pow(joints[j].y - joints[i].y, 2));
+        double c = (joints[j].x - joints[i].x) / len;
+        double s = (joints[j].y - joints[i].y) / len;
+
+        MatrixXd kloc(6, 6);
+        kloc.setZero();
+
+        MatrixXd T(6, 6);
+        T << c, s, 0, 0, 0, 0,
+            -s, c, 0, 0, 0, 0,
+             0, 0, 1, 0, 0, 0,
+             0, 0, 0, c, s, 0,
+             0, 0, 0, -s, c, 0,
+             0, 0, 0, 0, 0, 1;
+
+        MatrixXd kglobal = T.transpose() * kloc * T;
+
+        vector<int> GlobDOF = {3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2};
+        for (int row = 0; row < 6; ++row) {
+            for (int col = 0; col < 6; ++col) {
+                k_unrestr(GlobDOF[row], GlobDOF[col]) += kglobal(row, col);
+            }
+        }
+    }
+
+    MatrixXd k_restrained = k_unrestr;
+    VectorXd force_restrained = VectorXd::Zero(3 * numJoints);
+
+    VectorXd displacement_restrained = k_restrained.colPivHouseholderQr().solve(force_restrained - end_force_unrestr);
+
+    ofstream outputFile("data.csv");
+    outputFile << "MEM_NO,Fx_i,Fy_i,Mz_i,Fx_j,Fy_j,Mz_j,L,W,∑Fx,∑Fy,∑Mz\n";
+
+    for (const auto &member : members) {
+        outputFile << member.id << ",";
+        outputFile << "..." << "\n";
+    }
+    outputFile.close();
+
+    cout << "[The deformed and undeformed frame has been shown on same plot]" << endl;
+    cout << "[The deformed shape has been exaggerated " << scale << " times in order to spot the difference]" << endl;
+
+    return 0;
+}
+
+vector<Joint> readJointCoordinates(const string &filename) {
+    vector<Joint> joints;
+    return joints;
+}
+
+vector<Member> readMemberConnectivity(const string &filename) {
+    vector<Member> members;
+    return members;
+}
